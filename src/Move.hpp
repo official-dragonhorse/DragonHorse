@@ -5,46 +5,132 @@
 #include <cassert>
 #include <utility>
 
-class Move
-{
-    uint16_t m_move;
+class Move {
+   public:
 
-public:
-    constexpr Move()
-        : m_move(0)
+    Move() = default;
+    constexpr explicit Move(std::uint16_t d) :
+        data(d) {}
+
+    constexpr Move(Square from, Square to) :
+        data((from << 6) + to) {}
+
+    constexpr Move(Square from, Square to, MoveType mt)
+        : data(from + (to << 6) + (mt << 12))
     {}
-    Move(Square from, Square to)
-        : m_move(from + (to << 6))
-    {}
-    Move(Square from, Square to, MoveType mt)
-        : m_move(from + (to << 6) + (mt << 12))
-    {}
-    Move(Hash hash)
-        : m_move((hash & 0b111111111111) | ((hash & 0b11000000000000) << 3))
-    {}
+
+    // template<MoveType T>
+    // static constexpr Move make(Square from, Square to, PieceType pt = KNIGHT) {
+    //     return Move(T + ((pt - KNIGHT) << 12) + (from << 6) + to);
+    // }
+
+    constexpr Square from_sq() const {
+        assert(is_ok());
+        return Square((data >> 6) & 0x3F);
+    }
+
+    constexpr Square to_sq() const {
+        assert(is_ok());
+        return Square(data & 0x3F);
+    }
+
+    constexpr int from_to() const { return data & 0xFFF; }
+
+    constexpr MoveType type_of() const { return MoveType(data & (3 << 14)); }
+
+    constexpr PieceType promotion_type() const { return PieceType(((data >> 12) & 3) + KNIGHT); }
+
+    constexpr bool is_ok() const { return none().data != data && null().data != data; }
+
+    // Move(Hash hash)
+    //     : data((hash & 0b111111111111) | ((hash & 0b11000000000000) << 3))
+    // {}
 
     static Move from_int(uint16_t number)
     {
         Move move;
-        move.m_move = number;
+        move.data = number;
         return move;
     }
 
-    constexpr Square from() const { return m_move & 0b111111; }
-    constexpr Square to() const { return (m_move & 0b111111000000) >> 6; }
+    static constexpr Move null() { return Move(65); }
+    static constexpr Move none() { return Move(0); }
+
+    constexpr Square from() const { return data & 0b111111; }
+    constexpr Square to() const { return (data & 0b111111000000) >> 6; }
     constexpr bool is_capture() const { return move_type() & CAPTURE; }
     constexpr bool is_ep_capture() const { return move_type() == EP_CAPTURE; }
     constexpr bool is_double_pawn_push() const { return move_type() == DOUBLE_PAWN_PUSH; }
     constexpr bool is_promotion() const { return move_type() & KNIGHT_PROMO; }
     constexpr bool is_castle() const { return (move_type() == KING_CASTLE) || (move_type() == QUEEN_CASTLE); }
     constexpr PieceType promo_piece() const { return static_cast<PieceType>((move_type() & 0b0011) + 1); }
-    constexpr MoveType move_type() const { return static_cast<MoveType>(m_move >> 12); }
-    constexpr Hash hash() const { return (m_move & 0b111111111111) | ((m_move & 0b11000000000000000) >> 3); }
-    constexpr Hash to_int() const { return m_move; }
+    constexpr MoveType move_type() const { return static_cast<MoveType>(data >> 12); }
+    constexpr Hash hash() const { return (data & 0b111111111111) | ((data & 0b11000000000000000) >> 3); }
+    constexpr Hash to_int() const { return data; }
 
-    constexpr bool operator==(const Move& other) const { return m_move == other.m_move; }
-    constexpr bool operator!=(const Move& other) const { return m_move != other.m_move; }
+    constexpr bool operator==(const Move& other) const { return data == other.data; }
+    constexpr bool operator!=(const Move& other) const { return data != other.data; }
+
+    constexpr bool operator==(const Move& m) const { return data == m.data; }
+    constexpr bool operator!=(const Move& m) const { return data != m.data; }
+
+    constexpr explicit operator bool() const { return data != 0; }
+
+    constexpr std::uint16_t raw() const { return data; }
+
+    struct MoveHash {
+        std::size_t operator()(const Move& m) const { return m.data; }
+    };
+
+   protected:
+    std::uint16_t data;
 };
+
+
+// class Move
+// {
+//     std::uint16_t m_move;
+//     // uint16_t m_move;
+
+// public:
+//     constexpr Move()
+//         : m_move(0)
+//     {}
+//     Move(Square from, Square to)
+//         : m_move(from + (to << 6))
+//     {}
+//     Move(Square from, Square to, MoveType mt)
+//         : m_move(from + (to << 6) + (mt << 12))
+//     {}
+//     Move(Hash hash)
+//         : m_move((hash & 0b111111111111) | ((hash & 0b11000000000000) << 3))
+//     {}
+
+//     static Move from_int(uint16_t number)
+//     {
+//         Move move;
+//         move.m_move = number;
+//         return move;
+//     }
+
+//     static constexpr Move null() { return Move(65); }
+//     static constexpr Move none() { return Move(0); }
+    
+//     constexpr Square from() const { return m_move & 0b111111; }
+//     constexpr Square to() const { return (m_move & 0b111111000000) >> 6; }
+//     constexpr bool is_capture() const { return move_type() & CAPTURE; }
+//     constexpr bool is_ep_capture() const { return move_type() == EP_CAPTURE; }
+//     constexpr bool is_double_pawn_push() const { return move_type() == DOUBLE_PAWN_PUSH; }
+//     constexpr bool is_promotion() const { return move_type() & KNIGHT_PROMO; }
+//     constexpr bool is_castle() const { return (move_type() == KING_CASTLE) || (move_type() == QUEEN_CASTLE); }
+//     constexpr PieceType promo_piece() const { return static_cast<PieceType>((move_type() & 0b0011) + 1); }
+//     constexpr MoveType move_type() const { return static_cast<MoveType>(m_move >> 12); }
+//     constexpr Hash hash() const { return (m_move & 0b111111111111) | ((m_move & 0b11000000000000000) >> 3); }
+//     constexpr Hash to_int() const { return m_move; }
+
+//     constexpr bool operator==(const Move& other) const { return m_move == other.m_move; }
+//     constexpr bool operator!=(const Move& other) const { return m_move != other.m_move; }
+// };
 
 
 constexpr Move MOVE_NULL = Move();

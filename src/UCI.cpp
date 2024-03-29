@@ -14,6 +14,12 @@
 #include <sstream>
 #include <string>
 
+//From Brainlearn begin
+
+#include "BrainLearn/src/learn.h"
+#include "BrainLearn/src/book/book.h"
+#include "BrainLearn/src/mcts/montecarlo.h"
+//From Brainlearn end
 
 namespace UCI
 {
@@ -23,6 +29,21 @@ namespace UCI
     const std::string VERSION = "dragonhorse v0.5";
 #endif
 
+ //livebook begin
+#ifdef USE_LIVEBOOK
+    options["Live Book"] << Option(false);
+    options["Live Book URL"] << Option("http://www.chessdb.cn/cdb.php",
+                                       [this](const Option& o) { Search::setLiveBookURL(o); });
+    options["Live Book Timeout"] << Option(
+      5000, 0, 10000, [this](const Option& o) { Search::setLiveBookTimeout(o); });
+    options["Live Book Retry"] << Option(
+      3, 1, 100, [this](const Option& o) { Search::set_livebook_retry(o); });
+    options["Live Book Diversity"] << Option(false);
+    options["Live Book Contribute"] << Option(false);
+    options["Live Book Depth"] << Option(
+      3, 1, 100, [this](const Option& o) { Search::set_livebook_depth(o); });
+#endif
+    //livebook end
 
     std::unique_ptr<ThreadPool> pool;
     std::map<std::string, Option, OptionNameCompare> OptionsMap;
@@ -346,8 +367,33 @@ namespace UCI
 
         // Push moves to the position
         Move move;
+
+        // Brainlearn::Move m;
+        
+        // while (stream >> token && (move = move_from_uci(pos, token)) != MOVE_NULL)
+        // {
+        //     pos.make_move(move);
+        //     pos.set_init_ply();
+        // }
+
+        // Parse the move list, if any
         while (stream >> token && (move = move_from_uci(pos, token)) != MOVE_NULL)
         {
+
+            //Kelly begin
+            if (LD.is_enabled() && LD.learning_mode() != LearningMode::Self && !LD.is_paused())
+            {
+                PersistedLearningMove persistedLearningMove;
+                persistedLearningMove.key                      = pos.key();
+                persistedLearningMove.learningMove.depth       = 0;
+                persistedLearningMove.learningMove.move        = move;
+                persistedLearningMove.learningMove.score       = VALUE_NONE;
+                persistedLearningMove.learningMove.performance = 100;
+
+                LD.add_new_learning(persistedLearningMove.key, persistedLearningMove.learningMove);
+            }
+            //Kelly end
+
             pos.make_move(move);
             pos.set_init_ply();
         }
@@ -366,6 +412,12 @@ namespace UCI
 
     void ucinewgame()
     {
+        // livebook begin
+        #ifdef USE_LIVEBOOK
+            Brainlearn::Search::set_livebook_retry((int) options["Live Book Retry"]);
+            Brainlearn::Search::set_livebook_depth((int) options["Live Book Depth"]);
+        #endif
+        // livebook end
         pool->clear();
     }
 
@@ -411,9 +463,8 @@ namespace UCI
             if (position.board().to_uci(move) == move_str)
                 return move;
 
-        return MOVE_NULL;
+        return Move::none();
     }
-
 
     bool OptionNameCompare::operator()(const std::string& a, const std::string& b) const
     {

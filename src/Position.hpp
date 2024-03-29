@@ -701,10 +701,18 @@ class Position
     int m_extensions;
     std::vector<MoveInfo> m_moves;
     bool m_reduced;
+    bool       chess960;
 
 public:
+    // Accessing hash keys
+    Key key() const;
+    Key key_after(Move m) const;
+    Key material_key() const;
+    Key pawn_key() const;
+    
     Position();
 
+inline bool Position::is_chess960() const { return chess960; }
 
     Position(std::string fen);
 

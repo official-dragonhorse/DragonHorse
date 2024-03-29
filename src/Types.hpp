@@ -15,16 +15,56 @@ using Direction = int8_t;
 using Score = int32_t;
 using Depth = int;
 
+using Key      = uint64_t;
+
 
 constexpr int NUM_COLORS = 2;
 constexpr int NUM_SQUARES = 64;
 constexpr int NUM_PIECE_TYPES = 6;
 constexpr int NUM_CASTLE_SIDES = 2;
 
+constexpr int VALUE_NONE = 32002;
+
+constexpr int MAX_MOVES = 256;
 
 constexpr int NUM_MAX_MOVES = 256;
 constexpr int NUM_MAX_PLY = 255;
 constexpr Depth NUM_MAX_DEPTH = 200;
+
+enum File : int {
+    FILE_A,
+    FILE_B,
+    FILE_C,
+    FILE_D,
+    FILE_E,
+    FILE_F,
+    FILE_G,
+    FILE_H,
+    FILE_NB
+};
+
+enum Rank : int {
+    RANK_1,
+    RANK_2,
+    RANK_3,
+    RANK_4,
+    RANK_5,
+    RANK_6,
+    RANK_7,
+    RANK_8,
+    RANK_NB
+};
+
+constexpr File file_of(Square s) { return File(s & 7); }
+constexpr Rank rank_of(Square s) { return Rank(s >> 3); }
+
+
+enum MoveType {
+    NORMAL,
+    PROMOTION  = 1 << 14,
+    EN_PASSANT = 2 << 14,
+    CASTLING   = 3 << 14
+};
 
 
 enum Turn : int8_t
@@ -70,6 +110,11 @@ enum Piece : int8_t
     B_KING   = W_KING   | 0x8,
     NO_PIECE = PIECE_NONE
 };
+
+// Based on a congruential pseudo-random number generator
+constexpr Key make_key(uint64_t seed) {
+    return seed * 6364136223846793005ULL + 1442695040888963407ULL;
+}
 
 
 enum MoveType : int8_t

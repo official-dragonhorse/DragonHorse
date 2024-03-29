@@ -13,8 +13,29 @@
 #include <chrono>
 #include <vector>
 
+#include <fstream>  // kelly
+#include "BrainLearn/src/learn.h"  //Khalid
+#include "BrainLearn/src/mcts/montecarlo.h"  //Montecarlo
+
 namespace Search
 {
+    // livebook begin
+    #ifdef USE_LIVEBOOK
+        #define CURL_STATICLIB
+    extern "C" {
+        #include <curl/curl.h>
+    }
+        #undef min
+        #undef max
+    #endif
+    // livebook end
+
+    // Kelly begin
+    bool                               useLearning          = true;
+    bool                               enabledLearningProbe = false;
+    std::vector<PersistedLearningMove> gameLine;
+    // Kelly end
+
     Timer::Timer()
     {
         m_start = std::chrono::steady_clock::now();
@@ -216,6 +237,36 @@ namespace Search
         return result;
     }
 
+
+    // livebook begin
+    #ifdef USE_LIVEBOOK
+    CURL*       g_cURL;
+    std::string g_szRecv;
+    std::string g_livebookURL = "http://www.chessdb.cn/cdb.php";
+    int         g_inBook;
+    int         livebook_depth_count = 0;
+    int         max_book_depth;
+
+    size_t cURL_WriteFunc(void* contents, size_t size, size_t nmemb, std::string* s) {
+        size_t newLength = size * nmemb;
+        try
+        { s->append((char*) contents, newLength); } catch (std::bad_alloc&)
+        {
+            // handle memory problem
+            return 0;
+        }
+        return newLength;
+    }
+    void Search::setLiveBookURL(const std::string& newURL) { g_livebookURL = newURL; }
+    void Search::setLiveBookTimeout(size_t newTimeoutMS) {
+        curl_easy_setopt(g_cURL, CURLOPT_TIMEOUT_MS, newTimeoutMS);
+    }
+    void Search::set_livebook_retry(int retry) { g_inBook = retry; }
+    void Search::set_livebook_depth(int book_depth) { max_book_depth = book_depth; }
+    #endif
+    // livebook end
+    
+
     const SearchData* SearchData::previous(int distance) const
     {
         const SearchData* curr = this;
@@ -226,6 +277,59 @@ namespace Search
 
     void SearchData::update_pv(Move best_move, Move* new_pv)
     {
+        // Live Book begin
+        #ifdef USE_LIVEBOOK
+                if (think)
+                {
+                    if (!bookMove)
+                    {
+                        if (options["Live Book"] && g_inBook)
+                        {
+                            if (rootPos.game_ply() == 0)
+                                livebook_depth_count = 0;
+                            if (livebook_depth_count < max_book_depth)
+                            {
+                                CURLcode    res;
+                                char*       szFen = curl_easy_escape(g_cURL, rootPos.fen().c_str(), 0);
+                                std::string szURL = g_livebookURL + "?action="
+                                                + (options["Live Book Diversity"] ? "query" : "querybest")
+                                                + "&board=" + szFen;
+                                curl_free(szFen);
+                                curl_easy_setopt(g_cURL, CURLOPT_URL, szURL.c_str());
+                                g_szRecv.clear();
+                                res = curl_easy_perform(g_cURL);
+                                if (res == CURLE_OK)
+                                {
+                                    g_szRecv.erase(std::find(g_szRecv.begin(), g_szRecv.end(), '\0'),
+                                                g_szRecv.end());
+                                    if (g_szRecv.find("move:") != std::string::npos)
+                                    {
+                                        std::string tmp = g_szRecv.substr(5);
+                                        bookMove        = UCI::to_move(rootPos, tmp);
+                                        livebook_depth_count++;
+                                    }
+                                }
+                            }
+                            if (bookMove && std::count(rootMoves.begin(), rootMoves.end(), bookMove))
+                            {
+                                g_inBook = options["Live Book Retry"];
+                                think    = false;
+                                for (Thread* th : threads)
+                                    std::swap(th->worker->rootMoves[0],
+                                            *std::find(th->worker->rootMoves.begin(),
+                                                        th->worker->rootMoves.end(), bookMove));
+                            }
+                            else
+                            {
+                                bookMove = Move::none();
+                                g_inBook--;
+                            }
+                        }
+                    }
+                }
+        #endif
+        // Live Book end
+
         // Set the initial bestmove
         Move* dst = m_pv;
         *(dst++) = best_move;
@@ -236,6 +340,20 @@ namespace Search
 
         // Set last entry as null move for a stop condition
         *dst = MOVE_NULL;
+
+        // livebook begin
+        #ifdef USE_LIVEBOOK
+            if (options["Live Book"] && options["Live Book Contribute"] && !g_inBook)
+            {
+                char*       szFen = curl_easy_escape(g_cURL, rootPos.fen().c_str(), 0);
+                std::string szURL = g_livebookURL + "?action=store" + "&board=" + szFen + "&move=move:"
+                                + UCI::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
+                curl_free(szFen);
+                curl_easy_setopt(g_cURL, CURLOPT_URL, szURL.c_str());
+                curl_easy_perform(g_cURL);
+            }
+        #endif
+        // livebook end
     }
 
     void SearchData::accept_pv()
@@ -254,6 +372,18 @@ namespace Search
     {
         for (int i = 0; i < TOTAL_PV_LENGTH; i++)
             m_pv[i] = MOVE_NULL;
+            
+        // livebook begin
+        #ifdef USE_LIVEBOOK
+            curl_global_init(CURL_GLOBAL_DEFAULT);
+            g_cURL = curl_easy_init();
+            curl_easy_setopt(g_cURL, CURLOPT_TIMEOUT_MS, 1000L);
+            curl_easy_setopt(g_cURL, CURLOPT_WRITEFUNCTION, cURL_WriteFunc);
+            curl_easy_setopt(g_cURL, CURLOPT_WRITEDATA, &g_szRecv);
+            set_livebook_retry((int) options["Live Book Retry"]);
+            set_livebook_depth((int) options["Live Book Depth"]);
+        #endif
+        // livebook end
     }
 
 
